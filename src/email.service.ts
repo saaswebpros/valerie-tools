@@ -10,10 +10,21 @@ export class EmailService {
 
   private buildEmail(dto: SendEmailDto) {
     const name = dto.name || 'there';
-    const email = dto.email || '';
+    // Accept both the ElevenLabs tool field (recipient_email) and the
+    // legacy structured field (email).
+    const email = dto.recipient_email || dto.email || '';
     const phone = dto.phone || '';
     const serviceType = dto.service_type || 'your project';
-    const subject = `SaaS Web Pros - Confirmation for ${name}`;
+
+    // If the caller (ElevenLabs agent) supplied a ready-made subject and
+    // body, use them directly. Otherwise build the standard template.
+    if (dto.message_body) {
+      const subject =
+        dto.subject || `SaaS Web Pros - Confirmation for ${name}`;
+      return { name, email, phone, serviceType, subject, body: dto.message_body };
+    }
+
+    const subject = dto.subject || `SaaS Web Pros - Confirmation for ${name}`;
     const body = `Hi ${name},
 
 Thank you for contacting SaaS Web Pros! We've received your inquiry about ${serviceType}.
