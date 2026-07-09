@@ -76,7 +76,7 @@ info@saaswebpros.com`;
         // errors (e.g. HTTP 403 when the domain is not verified). We must
         // inspect the returned error explicitly.
         const { data, error } = await resend.emails.send({
-          from: 'SaaS Web Pros <onboarding@resend.dev>',
+          from: 'SaaS Web Pros <info@saaswebpros.com>',
           to: [email],
           bcc: bccRecipients,
           subject,
@@ -119,6 +119,11 @@ info@saaswebpros.com`;
           port: smtp.port,
           secure: smtp.port === 465,
           auth: { user: smtp.user, pass: smtp.pass },
+          // Fail fast: Railway blocks outbound SMTP, so never hang past the
+          // agent's 20s tool timeout waiting on a dead connection.
+          connectionTimeout: 8000,
+          greetingTimeout: 8000,
+          socketTimeout: 8000,
         });
         await transporter.sendMail({
           from: `SaaS Web Pros <${smtp.fromEmail}>`,
