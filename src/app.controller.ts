@@ -36,7 +36,12 @@ export class AppController {
   @Post('send-email')
   @HttpCode(200)
   async sendEmail(@Body() body: SendEmailDto) {
-    return this.email.sendEmail(body || {});
+    try {
+      return await this.email.sendEmail(body || {});
+    } catch (e) {
+      const error = (e as Error).message || 'Failed to send confirmation email';
+      return { success: false, error };
+    }
   }
 
   @Post('send-sms')

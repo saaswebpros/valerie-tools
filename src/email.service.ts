@@ -37,15 +37,34 @@ info@saaswebpros.com`;
   }
 
   async sendEmail(dto: SendEmailDto) {
-    const { name, email, subject, body } = this.buildEmail(dto);
+    const { email, subject, body } = this.buildEmail(dto);
+
+    if (!email) {
+      throw new Error('Recipient email address is required to send a confirmation email.');
+    }
+
+    const resendKey = process.env.RESEND_API_KEY || '';
+    const smtp = getSmtpCreds();
+    const hasSmtp = !!(smtp.host && smtp.user && smtp.pass);
+
+    // No provider configured at all — this is a real failure, do not fake success.
+    if (!resendKey && !hasSmtp) {
+      throw new Error(
+        'No email provider is configured (missing RESEND_API_KEY and SMTP credentials).',
+      );
+    }
 
     // Method 1: Try Resend HTTP API (works on Railway free tier)
-    const resendKey = process.env.RESEND_API_KEY || '';
     if (resendKey) {
+      const resend = new Resend(resendKey);
+      const bccRecipients = process.env.BCC_EMAIL ? [process.env.BCC_EMAIL] : [];
+
+      let resendError: string | null = null;
       try {
-        const resend = new Resend(resendKey);
-        const bccRecipients = process.env.BCC_EMAIL ? [process.env.BCC_EMAIL] : [];
-        await resend.emails.send({
+        // The Resend SDK returns { data, error } and does NOT throw on API
+        // errors (e.g. HTTP 403 when the domain is not verified). We must
+        // inspect the returned error explicitly.
+        const { data, error } = await resend.emails.send({
           from: 'SaaS Web Pros <info@saaswebpros.com>',
           to: [email],
           bcc: bccRecipients,
@@ -53,16 +72,36 @@ info@saaswebpros.com`;
           text: body,
           replyTo: 'info@saaswebpros.com',
         });
-        this.logger.log(`Email sent to ${email} via Resend API`);
-        return { success: true, message: `Confirmation email sent to ${email}` };
+
+        if (error) {
+          resendError =
+            (error as any).message ||
+            JSON.stringify(error) ||
+            'Unknown Resend API error';
+        } else {
+          this.logger.log(
+            `Email sent to ${email} via Resend API (id: ${data?.id ?? 'n/a'})`,
+          );
+          return {
+            success: true,
+            message: `Confirmation email sent to ${email}`,
+            id: data?.id,
+          };
+        }
       } catch (e) {
-        this.logger.error('Resend API failed: ' + (e as Error).message);
+        resendError = (e as Error).message;
+      }
+
+      this.logger.error(`Resend API failed for ${email}: ${resendError}`);
+
+      // If SMTP is not available as a fallback, propagate the Resend error.
+      if (!hasSmtp) {
+        throw new Error(`Failed to send email via Resend: ${resendError}`);
       }
     }
 
-    // Method 2: Try SMTP (works when not on Railway)
-    const smtp = getSmtpCreds();
-    if (smtp.host && smtp.user && smtp.pass) {
+    // Method 2: Try SMTP (fallback when Resend fails or is not configured)
+    if (hasSmtp) {
       try {
         const transporter = nodemailer.createTransport({
           host: smtp.host,
@@ -79,16 +118,13 @@ info@saaswebpros.com`;
         this.logger.log(`Email sent to ${email} via SMTP (${smtp.host})`);
         return { success: true, message: `Confirmation email sent to ${email}` };
       } catch (e) {
-        this.logger.error('SMTP send failed: ' + (e as Error).message);
+        const smtpError = (e as Error).message;
+        this.logger.error(`SMTP send failed for ${email}: ${smtpError}`);
+        throw new Error(`Failed to send email via SMTP: ${smtpError}`);
       }
     }
 
-    // Fallback: log details
-    this.logger.log(`Email queued (no provider configured) to ${email}: ${subject}`);
-    return {
-      success: true,
-      message: `Confirmation email sent to ${email}`,
-      details: { to: email, subject, name, service_type: dto.service_type },
-    };
+    // Should be unreachable, but never fake success.
+    throw new Error('Failed to send confirmation email: no provider succeeded.');
   }
 }
