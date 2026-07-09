@@ -65,7 +65,7 @@ info@saaswebpros.com`;
         // errors (e.g. HTTP 403 when the domain is not verified). We must
         // inspect the returned error explicitly.
         const { data, error } = await resend.emails.send({
-          from: 'SaaS Web Pros <info@saaswebpros.com>',
+          from: 'SaaS Web Pros <onboarding@resend.dev>',
           to: [email],
           bcc: bccRecipients,
           subject,
